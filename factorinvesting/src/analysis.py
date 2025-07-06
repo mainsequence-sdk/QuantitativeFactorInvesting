@@ -2,6 +2,7 @@
 import pandas as pd
 import datetime
 import mainsequence.client as ms_client
+import mainsequence.tdag as tdag
 import numpy as np
 import statsmodels as sm
 
@@ -36,7 +37,7 @@ class PortfolioFactorAnalysis:
     """
 
     def __init__(self,
-                 factor_returns_ts: "TimeSerie",
+                 factor_returns_uid: str,factor_exposures_uid:str,prices_uid:str,
                  portfolio_weights: pd.Series = None,
                  start_date: datetime.datetime = None,
                  end_date: datetime.datetime = None):
@@ -56,9 +57,9 @@ class PortfolioFactorAnalysis:
             End date (inclusive) for data retrieval.
         """
         # --- Data sources setup ---
-        self.factor_returns_ts = factor_returns_ts
-        self.exposures_ts      = factor_returns_ts.style_ts
-        self.prices_ts         = factor_returns_ts.style_ts.prices_ts
+        self.factor_returns_ts = tdag.APITimeSerie.build_from_unique_identifier(factor_returns_uid)
+        self.exposures_ts      = tdag.APITimeSerie.build_from_unique_identifier(factor_exposures_uid)
+        self.prices_ts         = tdag.APITimeSerie.build_from_unique_identifier(prices_uid)
 
         # --- Portfolio weights defaulting ---
         if portfolio_weights is None:

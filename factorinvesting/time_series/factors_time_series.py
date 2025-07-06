@@ -19,6 +19,27 @@ import polygon
 
 client = RESTClient(api_key=os.getenv("POLYGON_API_KEY"))
 
+CANONICAL_FACTOR_RETURNS_ID = "canonical_12_style_factor_returns_axioma_barra"
+CANONICAL_STYLE_FACTORS_MATRIX_ID = "canonical_12_style_factor_matrix_axba"
+
+
+# From user's code
+STYLE_FACTOR_MAP = {'lncap': 'Size',
+                    'lncap2': 'NonLinearSize',
+                    'beta': 'Beta',
+                    'nl_beta': 'NonLinearBeta',
+                    'mom_12_1': 'Momentum',
+                    'mom_1m': 'STMomentum',
+                    'resid_vol': 'ResidualVol',
+                    'liquidity': 'Liquidity',
+                    'book_to_price': 'Value',
+                    'growth': 'Growth',
+                    'leverage': 'Leverage',
+                    'div_yield': 'DividendYield',
+                    'earnings_yield': 'EarningsYield',
+                    'profitability': 'Profitability',
+
+                    }
 
 # ── dividend helper ────────────────────────────────────────────────────────────
 def fy_dividend_yield_avg(polygon_client, ticker: str, fiscal_year: int, logger=None):
@@ -164,14 +185,14 @@ class FundamentalsTimeSeries(TimeSerie):
                         "total_debt": bal.liabilities.value,  # Example path, may need adjustment
                         "total_equity": bal.equity.value,
                         "total_dividends_per_share": total_dividends_per_share,
-                        "preferred_stock_dividends_and_other_adjustments": inc.preferred_stock_dividends_and_other_adjustments.value,
+                        "preferred_stock_d_and_oa": inc.preferred_stock_dividends_and_other_adjustments.value,
                         "net_income": inc.net_income_loss.value,
                         "revenue": inc.revenues.value,
                         "basic_average_shares": inc.basic_average_shares.value,
                         "end_date": pd.to_datetime(fin.end_date).timestamp(),
                         "filing_date": pd.to_datetime(fin.filing_date).timestamp(),
                         "equity_attributable_to_parent": bal.equity_attributable_to_parent.value,
-                        "equity_attributable_to_noncontrolling_interest": bal.equity_attributable_to_noncontrolling_interest.value,
+                        "equity_attributable_to_nci": bal.equity_attributable_to_noncontrolling_interest.value,
                         "time_index": datetime.datetime(year=int(fin.fiscal_year), month=12, day=31, tzinfo=pytz.utc)
 
                     })
@@ -184,6 +205,114 @@ class FundamentalsTimeSeries(TimeSerie):
         df = df.set_index(["time_index", "unique_identifier"])
         df = df.astype(float)
         return df.sort_index()
+
+    def _get_column_metadata(self):
+        """
+        Return a `List[ColumnMetaData]` describing every annual fundamental
+        field that the `update()` method writes into the DataFrame.
+
+        All values are reported **per share or per company** for the fiscal
+        year whose closing date is the DataFrame’s first index level
+        (`time_index`).  Epoch‑time columns are stored as floats so they can be
+        cast back to `pd.Timestamp` downstream.
+        """
+
+        meta_specs = [
+            # (column_name, dtype, label, description)
+            ("total_assets", "float", "TotalAssets",
+             "Total assets at fiscal year‑end (balance‑sheet)."),
+            ("total_debt", "float", "TotalDebt",
+             "Total debt / liabilities at FYE."),
+            ("total_equity", "float", "TotalEquity",
+             "Shareholders’ equity at FYE."),
+            ("total_dividends_per_share", "float", "DividendsPerShare",
+             "Sum of cash dividends per share declared during the fiscal year."),
+            ("preferred_stock_d_and_oa", "float",
+             "PrefDividendsAdjust",
+             "Preferred‑stock dividends and other income‑statement adjustments."),
+            ("net_income", "float", "NetIncome",
+             "Net income (loss) for the fiscal year."),
+            ("revenue", "float", "Revenue",
+             "Total revenue for the fiscal year."),
+            ("basic_average_shares", "float", "BasicAvgShares",
+             "Average basic shares outstanding during the fiscal year."),
+            ("end_date", "float", "FiscalYearEndDate",
+             "Fiscal year‑end date expressed as POSIX timestamp (UTC)."),
+            ("filing_date", "float", "FilingDate",
+             "SEC filing date expressed as POSIX timestamp (UTC)."),
+            ("equity_attributable_to_parent", "float",
+             "EquityToParent",
+             "Portion of equity attributable to the parent company."),
+            ("equity_attributable_to_nci", "float",
+             "EquityToNCI",
+             "Portion of equity attributable to non‑controlling interests."),
+        ]
+
+        return [
+            ms_client.ColumnMetaData(
+                column_name=col,
+                dtype=dtype,
+                label=label,
+                description=desc
+            )
+            for col, dtype, label, desc in meta_specs
+        ]
+
+    # ──────────────────────────────────────────────────────────────
+    # 2 ▸ Post‑update bookkeeping
+    # ──────────────────────────────────────────────────────────────
+    def _run_post_update_routines(self, error_on_last_update,
+                                  update_statistics: ms_client.DataUpdates):
+        """
+        Register (or patch) the *canonical* annual‑fundamentals time series in
+        `MarketsTimeSeriesDetails` **and** attach any newly processed assets.
+
+        Polygon fundamentals are reported once per year, so we tag the record
+        with an annual frequency when that enum is available; otherwise we fall
+        back to `one_d`.
+        """
+        CANONICAL_FUNDAMENTALS_ID = "polygon_annual_fundamentals"
+
+        # Choose the best‑matching frequency enum that exists in the client.
+        freq_enum = (
+            getattr(ms_client.DataFrequency, "one_y", None)
+            or getattr(ms_client.DataFrequency, "one_a", None)  # alternative naming
+            or ms_client.DataFrequency.one_d
+        )
+
+
+        source_table=self.local_time_serie.remote_table
+
+        try:
+            mts = ms_client.MarketsTimeSeriesDetails.get(
+                unique_identifier=CANONICAL_FUNDAMENTALS_ID
+            )
+
+            # Ensure it points at the same local_time_serie we just updated
+            if mts.source_table.id != source_table.id:
+                mts = mts.patch(source_table__id=source_table.id)
+
+
+
+        except ms_client.DoesNotExist:
+            mts = ms_client.MarketsTimeSeriesDetails.update_or_create(
+                unique_identifier=CANONICAL_FUNDAMENTALS_ID,
+                source_table__id=source_table.id,
+                data_frequency_id=freq_enum,
+                description=(
+                    "Canonical annual fundamentals downloaded from Polygon.io "
+                    "(balance‑sheet, income‑statement and cash‑flow items) for "
+                    "every covered equity."
+                ),
+            )
+
+        # Append any assets from this run that are not yet linked
+        new_assets = [
+            asset for asset in update_statistics.asset_list
+            if asset.id not in mts.assets_in_data_source
+        ]
+        if new_assets:
+            mts.append_asset_list_source(asset_list=new_assets)
 
 
 class StyleFactorsTimeSeries(TimeSerie):
@@ -562,6 +691,71 @@ class StyleFactorsTimeSeries(TimeSerie):
 
         return expo_df
 
+    def _get_column_metadata(self):
+
+        # descriptions drawn from your update(...) implementation
+        desc = {
+            'lncap': "Natural log of market cap; primary Size factor (Barra USE4 §3.2).",
+            'lncap2': "Squared log market cap; captures non-linear Size curvature.",
+            'beta': "104-week weekly CAPM β; systematic risk sensitivity, forward-filled to daily.",
+            'nl_beta': "Squared beta; non-linear Beta curvature term.",
+            'mom_12_1': "12-month return skipping the most recent month; medium-term Momentum.",
+            'mom_1m': "1-month return; short-term STMomentum.",
+            'resid_vol': "60-day rolling std of daily returns; ResidualVol (idiosyncratic risk).",
+            'liquidity': "Log(63-day average dollar volume ÷ market cap); Liquidity factor.",
+            'book_to_price': "Book-to-price ratio (equity ÷ market cap); Value factor.",
+            'earnings_yield': "TTM net income ÷ market cap; EarningsYield.",
+            'div_yield': "TTM dividends per share ÷ price; DividendYield.",
+            'leverage': "Total debt ÷ total assets; Leverage factor.",
+            'profitability': "Net income ÷ total assets; Profitability factor.",
+            'growth': "3-year revenue growth (FY0 vs FY-3), forward-filled; Growth factor.",
+        }
+
+        return [
+            ms_client.ColumnMetaData(
+                column_name=col,
+                dtype="float",
+                label=label,
+                description=desc[col]
+            )
+            for col, label in STYLE_FACTOR_MAP.items()
+        ]
+
+    def  _run_post_update_routines(self, error_on_last_update,update_statistics:ms_client.DataUpdates):
+
+        market_beta_asset_proxy=self.market_beta_asset_proxy
+
+        TS_UID = f"{CANONICAL_STYLE_FACTORS_MATRIX_ID}_{market_beta_asset_proxy.ticker}"
+
+        source_table=self.local_time_serie.remote_table
+
+        try:
+            markets_time_series_details = ms_client.MarketsTimeSeriesDetails.get(
+                unique_identifier=TS_UID,
+            )
+            if markets_time_series_details.source_table.id != source_table.id:
+                markets_time_series_details = markets_time_series_details.patch(source_table__id=source_table.id)
+        except ms_client.DoesNotExist:
+            markets_time_series_details = ms_client.MarketsTimeSeriesDetails.update_or_create(
+                unique_identifier=TS_UID,
+                source_table__id=source_table.id,
+                data_frequency_id=ms_client.DataFrequency.one_d,
+                description=(
+                    "Canonical daily exposure matrix of the 12 Axioma/Barra style factors. "
+                    "Each column is the cap-weighted, winsorised and z-scored factor exposure "
+                    "(one unit of factor return = 1% stock return), ready for downstream risk and attribution."
+                    f"Using market proxy {self.style_ts.market_beta_asset_proxy.ticker}"
+                ),
+
+            )
+
+        new_assets = []
+        for asset in update_statistics.asset_list:
+            if asset.id not in markets_time_series_details.assets_in_data_source:
+                new_assets.append(asset)
+
+        markets_time_series_details.append_asset_list_source(asset_list=new_assets)
+
 
 class FactorReturnsTimeSeries(TimeSerie):
     """
@@ -705,6 +899,94 @@ class FactorReturnsTimeSeries(TimeSerie):
         return pd.DataFrame()  # nothing to update
 
 
+
+
+    # ──────────────────────────────────────────────────────────────
+    # 1 ▸ Column metadata  (one entry per factor‑return column)
+    # ──────────────────────────────────────────────────────────────
+    def _get_column_metadata(self):
+        """
+        Describe all factor‑return columns stored in this time‑series.
+
+        Each ColumnMetaData marks the column as a float and explains that the
+        value is a *daily factor return* expressed in percentage‑points:
+        if a stock’s exposure to a factor is +1, that day’s factor return is the
+        contribution (in %) to the stock’s return.
+        """
+
+        desc = {
+            'lncap': "Daily return to the Size factor (log‑market‑cap).",
+            'lncap2': "Return to the Size‑curvature term (non‑linear Size).",
+            'beta': "Return to the systematic‑risk (Beta) factor.",
+            'nl_beta': "Return to the Beta‑curvature term (non‑linear Beta).",
+            'mom_12_1': "Return to medium‑term Momentum (12‑1 month).",
+            'mom_1m': "Return to 1‑month (short‑term) Momentum.",
+            'resid_vol': "Return to the Residual Volatility factor.",
+            'liquidity': "Return to the Liquidity factor.",
+            'book_to_price': "Return to the Value factor (book‑to‑price).",
+            'growth': "Return to the Growth factor (3‑year sales growth).",
+            'leverage': "Return to the Leverage factor (debt‑to‑assets).",
+            'div_yield': "Return to the Dividend‑Yield factor.",
+            'earnings_yield': "Return to the Earnings‑Yield factor.",
+            'profitability': "Return to the Profitability (quality) factor.",
+        }
+
+        return [
+            ms_client.ColumnMetaData(
+                column_name=col,  # e.g. 'lncap'
+                dtype="float",
+                label=label,  # e.g. 'Size'
+                description=(
+                    f"{desc[col]} One unit equals a 1 % contribution to a stock’s "
+                    f"return per one unit of exposure."
+                )
+            )
+            for col, label in STYLE_FACTOR_MAP.items()
+        ]
+
+    # ──────────────────────────────────────────────────────────────
+    # 2 ▸ Post‑update bookkeeping  (register this time‑series)
+    # ──────────────────────────────────────────────────────────────
+    def _run_post_update_routines(self, error_on_last_update,
+                                  update_statistics: ms_client.DataUpdates):
+        """
+        Register (or patch) the canonical **factor‑return** time‑series with
+        `MarketsTimeSeriesDetails` so downstream services can discover it.
+
+        Unlike the exposure matrix, factor returns are *not security‑specific*,
+        so no asset list is maintained here.
+        """
+
+        TS_UID = f"{CANONICAL_FACTOR_RETURNS_ID}_{self.style_ts.market_beta_asset_proxy.ticker}"
+
+        source_table=self.local_time_serie.remote_table
+
+        try:
+            mts = ms_client.MarketsTimeSeriesDetails.get(
+                unique_identifier=TS_UID
+            )
+
+            # Ensure it points at the same local_time_serie we just updated
+            if mts.source_table.id !=  source_table.id:
+                mts = mts.patch(source_table__id=source_table.id)
+
+        except ms_client.DoesNotExist:
+            # Create the record the first time we run
+            mts = ms_client.MarketsTimeSeriesDetails.update_or_create(
+                unique_identifier=TS_UID,
+                source_table__id=source_table.id,
+                data_frequency_id=ms_client.DataFrequency.one_d,
+                description=(
+                    "Canonical daily returns for the 12 Axioma/Barra style factors "
+                    "computed via robust capital‑weighted WLS against the exposure "
+                    f"matrix. using for market proxy {self.style_ts.market_beta_asset_proxy.ticker}"
+                ),
+            )
+
+        # Factor returns have no per‑asset dimension, so there is no asset list
+        # to append.  The method exits silently once the metadata is in place.
+
+
 class FactorResidualTimeSeries(TimeSerie):
     """
     Stores ε₍ᵢ,ₜ₎  – the idiosyncratic residuals produced by the robust
@@ -773,23 +1055,7 @@ class FactorResidualTimeSeries(TimeSerie):
         return residuals_df
 
 
-# From user's code
-STYLE_FACTOR_MAP = {'lncap': 'Size',
-                    'lncap2': 'NonLinearSize',
-                    'beta': 'Beta',
-                    'nl_beta': 'NonLinearBeta',
-                    'mom_12_1': 'Momentum',
-                    'mom_1m': 'STMomentum',
-                    'resid_vol': 'ResidualVol',
-                    'liquidity': 'Liquidity',
-                    'book_to_price': 'Value',
-                    'growth': 'Growth',
-                    'leverage': 'Leverage',
-                    'div_yield': 'DividendYield',
-                    'earnings_yield': 'EarningsYield',
-                    'profitability': 'Profitability',
 
-                    }
 
 
 

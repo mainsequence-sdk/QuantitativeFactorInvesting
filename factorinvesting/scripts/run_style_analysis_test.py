@@ -2,7 +2,7 @@
 import mainsequence.client as ms_client
 from factorinvesting.time_series.factors_time_series import *
 from factorinvesting.src.analysis import PortfolioFactorAnalysis
-
+import datetime
 
 if __name__ == "__main__":
     market_asset = ms_client.Asset.get(ticker="IVV",
@@ -11,29 +11,27 @@ if __name__ == "__main__":
                                        security_market_sector=ms_client.MARKETS_CONSTANTS.FIGI_MARKET_SECTOR_EQUITY,
                                        )
 
-    ts=FundamentalsTimeSeries(assets_category_unique_id='s&p500_constitutents')
+    ts = FundamentalsTimeSeries(assets_category_unique_id='s&p500_constitutents')
     # ts.run(debug_mode=True, update_tree=False)
 
-
     style_ts = StyleFactorsTimeSeries(assets_category_unique_id='s&p500_constitutents',
-                                market_beta_asset_proxy=market_asset,
-                                )
+                                      market_beta_asset_proxy=market_asset,
+                                      )
     # style_ts.run(debug_mode=True,update_tree=False)
 
-
-
     factor_returns_ts = FactorReturnsTimeSeries(assets_category_unique_id='s&p500_constitutents',
-                                 market_beta_asset_proxy=market_asset,
-                                 )
-    factor_returns_ts.run(debug_mode=True,update_tree=True,force_update=True)
-
+                                                market_beta_asset_proxy=market_asset,
+                                                )
+    factor_returns_ts.run(debug_mode=True, update_tree=True, force_update=True)
     # Specify analysis date range
-    start = datetime.datetime(2024, 1, 1)
+    start = datetime.datetime(2022, 1, 1)
     end = datetime.datetime(2025, 1, 30)
 
     # Instantiate and run all analyses
     pfa = PortfolioFactorAnalysis(
-        factor_returns_ts=factor_returns_ts,
+        factor_returns_uid=CANONICAL_FACTOR_RETURNS_ID+"_IVV",
+        factor_exposures_uid=CANONICAL_STYLE_FACTORS_MATRIX_ID+"_IVV",
+        prices_uid="alpaca_1d_bars",
         portfolio_weights=None,
         start_date=start,
         end_date=end

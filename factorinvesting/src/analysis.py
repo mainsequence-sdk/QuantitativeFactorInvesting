@@ -3,7 +3,7 @@ import pandas as pd
 import datetime
 import mainsequence.client as ms_client
 import numpy as np
-import statmodels as sm
+import statsmodels as sm
 
 
 

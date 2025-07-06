@@ -1,4 +1,9 @@
 
+import pandas as pd
+import datetime
+import mainsequence.client as ms_client
+import numpy as np
+import statmodels as sm
 
 
 
@@ -31,7 +36,7 @@ class PortfolioFactorAnalysis:
     """
 
     def __init__(self,
-                 factor_returns_ts: FactorReturnsTimeSeries,
+                 factor_returns_ts: "TimeSerie",
                  portfolio_weights: pd.Series = None,
                  start_date: datetime.datetime = None,
                  end_date: datetime.datetime = None):

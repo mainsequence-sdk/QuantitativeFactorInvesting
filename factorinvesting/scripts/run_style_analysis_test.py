@@ -25,7 +25,7 @@ if __name__ == "__main__":
     factor_returns_ts = FactorReturnsTimeSeries(assets_category_unique_id='s&p500_constitutents',
                                  market_beta_asset_proxy=market_asset,
                                  )
-    # factor_returns_ts.run(debug_mode=True,update_tree=True,force_update=True)
+    factor_returns_ts.run(debug_mode=True,update_tree=True,force_update=True)
 
     # Specify analysis date range
     start = datetime.datetime(2024, 1, 1)

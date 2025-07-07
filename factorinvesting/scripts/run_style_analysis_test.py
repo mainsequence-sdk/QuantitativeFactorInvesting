@@ -12,7 +12,7 @@ if __name__ == "__main__":
                                        )
 
     ts = FundamentalsTimeSeries(assets_category_unique_id='s&p500_constitutents')
-    # ts.run(debug_mode=True, update_tree=False)
+    # ts.run(debug_mode=True, update_tree=False,force_update=True)
 
     style_ts = StyleFactorsTimeSeries(assets_category_unique_id='s&p500_constitutents',
                                       market_beta_asset_proxy=market_asset,
@@ -36,5 +36,4 @@ if __name__ == "__main__":
         start_date=start,
         end_date=end
     )
-    results = pfa.run_all()
-    print(results["portfolio_exposure"].head())
+

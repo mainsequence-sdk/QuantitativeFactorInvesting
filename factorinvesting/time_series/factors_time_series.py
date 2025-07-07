@@ -146,6 +146,14 @@ class FundamentalsTimeSeries(TimeSerie):
         # Fundamentals are annual, so we don't need to update daily.
         # We'll update if there's no data or if the last update was > 90 days ago.
 
+        def common_calendar_year(end_ts: pd.Timestamp) -> int:
+            """
+            Map *any* fiscal year that ends in Jan–Mar back to the previous
+            calendar year so that Apple-FY2024 and NVIDIA-FY2025 both become 2024.
+            """
+            return end_ts.year - 1 if end_ts.month < 7 else end_ts.year
+
+
         current_date = datetime.datetime.now(pytz.utc)
         uid_to_update = []
         for uid, last_update_time in update_statistics.update_statistics.items():
@@ -193,7 +201,10 @@ class FundamentalsTimeSeries(TimeSerie):
                         "filing_date": pd.to_datetime(fin.filing_date).timestamp(),
                         "equity_attributable_to_parent": bal.equity_attributable_to_parent.value,
                         "equity_attributable_to_nci": bal.equity_attributable_to_noncontrolling_interest.value,
-                        "time_index": datetime.datetime(year=int(fin.fiscal_year), month=12, day=31, tzinfo=pytz.utc)
+                        "fiscal_period":fin.fiscal_period,
+                        "time_index": datetime.datetime(year=common_calendar_year(pd.to_datetime(fin.end_date)),
+                                                        month=12,
+                                                        day=31,tzinfo=pytz.utc) #try to align time stamp
 
                     })
             except Exception:
@@ -203,7 +214,12 @@ class FundamentalsTimeSeries(TimeSerie):
 
         df = pd.DataFrame(records)
         df = df.set_index(["time_index", "unique_identifier"])
-        df = df.astype(float)
+        df = df.loc[~df.index.duplicated(keep='first')].copy()
+
+        for c in df.columns:
+            if c!="fiscal_period":
+                df[c]=df[c].astype(float)
+
         return df.sort_index()
 
     def _get_column_metadata(self):
@@ -219,32 +235,32 @@ class FundamentalsTimeSeries(TimeSerie):
 
         meta_specs = [
             # (column_name, dtype, label, description)
-            ("total_assets", "float", "TotalAssets",
+            ("total_assets", "float", "Total Assets",
              "Total assets at fiscal year‑end (balance‑sheet)."),
-            ("total_debt", "float", "TotalDebt",
+            ("total_debt", "float", "Total Debt",
              "Total debt / liabilities at FYE."),
-            ("total_equity", "float", "TotalEquity",
+            ("total_equity", "float", "Total Equity",
              "Shareholders’ equity at FYE."),
-            ("total_dividends_per_share", "float", "DividendsPerShare",
+            ("total_dividends_per_share", "float", "Dividends Per Share",
              "Sum of cash dividends per share declared during the fiscal year."),
             ("preferred_stock_d_and_oa", "float",
              "PrefDividendsAdjust",
              "Preferred‑stock dividends and other income‑statement adjustments."),
-            ("net_income", "float", "NetIncome",
+            ("net_income", "float", "Net Income",
              "Net income (loss) for the fiscal year."),
             ("revenue", "float", "Revenue",
              "Total revenue for the fiscal year."),
-            ("basic_average_shares", "float", "BasicAvgShares",
+            ("basic_average_shares", "float", "Basic Avg Shares",
              "Average basic shares outstanding during the fiscal year."),
-            ("end_date", "float", "FiscalYearEndDate",
+            ("end_date", "float", "Fiscal Year End Date",
              "Fiscal year‑end date expressed as POSIX timestamp (UTC)."),
-            ("filing_date", "float", "FilingDate",
+            ("filing_date", "float", "Filing Date",
              "SEC filing date expressed as POSIX timestamp (UTC)."),
             ("equity_attributable_to_parent", "float",
-             "EquityToParent",
+             "Equity To Parent",
              "Portion of equity attributable to the parent company."),
             ("equity_attributable_to_nci", "float",
-             "EquityToNCI",
+             "Equity To Non Controllable Interest",
              "Portion of equity attributable to non‑controlling interests."),
         ]
 
@@ -521,7 +537,8 @@ class StyleFactorsTimeSeries(TimeSerie):
         fund_all = fundamentals_hist_df.unstack("unique_identifier")
         # Shift the statement dates +90 d to avoid look-ahead, then ffill
         fund_all.index = fund_all.index + datetime.timedelta(days=90)
-        fund_all = fund_all.reindex(prices.index).ffill().astype(float)
+        fund_all = fund_all.reindex(prices.index).ffill()
+
 
         # Keep only assets present in both tables
         common_assets = prices.columns.intersection(
@@ -538,7 +555,16 @@ class StyleFactorsTimeSeries(TimeSerie):
         #    Log-market-cap compresses the extreme right tail so the factor is
         #    approximately symmetric; forward regressions then behave linearly.
         sh_out = fund_all.xs("basic_average_shares", level=0, axis=1)
-        mkt_cap = prices * sh_out
+        # compute market‐cap where shares exist
+        mkt_known = prices * sh_out
+
+        # carry last known share‐count forward, then pick the final value per column
+        last_shares = sh_out.ffill().iloc[-1]
+        # rebuild a “full” market‐cap history assuming share‐count fixed at last_shares
+        mkt_hist = prices.mul(last_shares, axis=1)
+        # fill in the missing market‐cap values with our history
+        mkt_cap = mkt_known.combine_first(mkt_hist) #assumes marketcap  adjusted prices
+
 
         lncap = np.log(mkt_cap)  # primary Size factor
         lncap2 = lncap ** 2  # ⚙️ Non-linear Size (“Size Curve”):
@@ -559,7 +585,7 @@ class StyleFactorsTimeSeries(TimeSerie):
 
         # ⚙️ Value – Book-to-Price (equity – preferred) / market-cap
         book_val = (fund_all["equity_attributable_to_parent"]
-                    - fund_all["equity_attributable_to_noncontrolling_interest"]  # minority interest
+                    - fund_all["equity_attributable_to_nci"]  # minority interest
 
                     )
         book_to_price = book_val / mkt_cap
@@ -744,7 +770,7 @@ class StyleFactorsTimeSeries(TimeSerie):
                     "Canonical daily exposure matrix of the 12 Axioma/Barra style factors. "
                     "Each column is the cap-weighted, winsorised and z-scored factor exposure "
                     "(one unit of factor return = 1% stock return), ready for downstream risk and attribution."
-                    f"Using market proxy {self.style_ts.market_beta_asset_proxy.ticker}"
+                    f"Using market proxy {self.market_beta_asset_proxy.ticker}"
                 ),
 
             )
@@ -1022,7 +1048,6 @@ class FactorResidualTimeSeries(TimeSerie):
         mkt_cap = self.style_ts.mkt_cap
         daily_ret = prices.pct_change()  # todo: Properly this needs to be excess return
 
-        import statsmodels.api as sm
         resid_frames = []
 
         # 2 · loop over each date block from exposures

@@ -4,7 +4,7 @@ import datetime
 import mainsequence.client as ms_client
 import mainsequence.tdag as tdag
 import numpy as np
-import statsmodels as sm
+import statsmodels.api as sm
 
 
 
@@ -112,6 +112,7 @@ class PortfolioFactorAnalysis:
         """
         Daily asset returns (cached).  Constructed from the prices_ts source.
         """
+        #Todo filter only by necessary assets
         if self._asset_ret_series is None:
             prices = (
                 self.prices_ts

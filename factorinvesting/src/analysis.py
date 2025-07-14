@@ -37,8 +37,8 @@ class PortfolioFactorAnalysis:
     """
 
     def __init__(self,
-                 factor_returns_uid: str,factor_exposures_uid:str,prices_uid:str,
-                 portfolio_weights: pd.Series = None,
+                 factor_returns_ts:tdag.TimeSerie,
+                 portfolio_weights: pd.Series,
                  start_date: datetime.datetime = None,
                  end_date: datetime.datetime = None):
         """
@@ -57,13 +57,12 @@ class PortfolioFactorAnalysis:
             End date (inclusive) for data retrieval.
         """
         # --- Data sources setup ---
-        self.factor_returns_ts = tdag.APITimeSerie.build_from_unique_identifier(factor_returns_uid)
-        self.exposures_ts      = tdag.APITimeSerie.build_from_unique_identifier(factor_exposures_uid)
-        self.prices_ts         = tdag.APITimeSerie.build_from_unique_identifier(prices_uid)
+        self.factor_returns_ts = factor_returns_ts
+        self.exposures_ts      = factor_returns_ts.style_factor_exposure_ts
+        self.prices_ts         = factor_returns_ts.style_factor_exposure_ts.prices_ts
 
         # --- Portfolio weights defaulting ---
-        if portfolio_weights is None:
-            portfolio_weights = self._create_random_portfolio()
+
         self.portfolio_weights = portfolio_weights
 
         # --- Date range for all historical queries ---
@@ -112,12 +111,20 @@ class PortfolioFactorAnalysis:
         """
         Daily asset returns (cached).  Constructed from the prices_ts source.
         """
-        #Todo filter only by necessary assets
+
+        assets_in_exposures=self.exposures_df.index.get_level_values("unique_identifier").unique()
+
+        range_descriptor = {}
+        for uid in assets_in_exposures:
+            range_descriptor[uid]={"start_date": self.start_date,
+                                   "start_date_operand":">=",
+                                   "end_date": self.end_date, "end_date_operand":"<=" }
+
+
+
         if self._asset_ret_series is None:
-            prices = (
-                self.prices_ts
-                .get_df_between_dates(self.start_date, self.end_date)[['close']]
-            )
+            prices = self.prices_ts.get_ranged_data_per_asset(
+                range_descriptor=range_descriptor)
             times   = pd.to_datetime(prices.index.get_level_values('time_index')).normalize()
             assets  = prices.index.get_level_values('unique_identifier')
             prices.index = pd.MultiIndex.from_arrays([times, assets],
@@ -150,8 +157,8 @@ class PortfolioFactorAnalysis:
             wtd       = df[factors].multiply(df['weight'], axis=0)
             self._port_expo_df = wtd.groupby(level='time_index').sum()
         return self._port_expo_df
-
-    def _create_random_portfolio(self) -> pd.Series:
+    @staticmethod
+    def create_random_portfolio() -> pd.Series:
         """
         Construct random weights for assets in the fixed 'magnificent_7' category.
 
@@ -319,7 +326,7 @@ class PortfolioFactorAnalysis:
             P&L impact per factor = exposure × shock.
         """
         expo = self.portfolio_exposure_df.loc[date]
-        return expo * shock_vector
+        return expo * shock_vector -expo
 
     def estimate_realized_factor_premia(self,
                                         date: pd.Timestamp,
@@ -370,6 +377,10 @@ class PortfolioFactorAnalysis:
 
         # 2) add intercept
         X.insert(0, 'alpha', 1.0)
+
+        if X.index.sort_values()!=y.index.sort_values():
+            print("Indices not aligns for date of analisis")
+            return None
 
         # 3) fit model (WLS or OLS) with HC1 robust errors
         if asset_weights is not None:

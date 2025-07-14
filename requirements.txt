@@ -204,7 +204,7 @@ rpds-py==0.26.0
 rsa==4.9.1
 s3fs==2025.5.1
 scikit-learn==1.6.1
-scipy==1.13.1
+scipy==1.15.2
 SecretStorage==3.3.3
 Send2Trash==1.8.3
 sgmllib3k==1.0.0
@@ -247,3 +247,4 @@ wrapt==1.17.2
 yarl==1.20.1
 zipp==3.23.0
 statsmodels==0.14.4
+skfolio==0.10.1

@@ -331,7 +331,7 @@ class FundamentalsTimeSeries(TimeSerie):
             mts.append_asset_list_source(asset_list=new_assets)
 
 
-class StyleFactorsTimeSeries(TimeSerie):
+class StyleFactorsExposureTS(TimeSerie):
     """
     Builds the twelve classic style exposures from MSCI-Barra / Qontigo-Axioma.
     This class orchestrates data dependencies and applies the factor construction
@@ -392,7 +392,7 @@ class StyleFactorsTimeSeries(TimeSerie):
         if mad == 0 or np.isnan(mad):
             return series
 
-        k = z * StyleFactorsTimeSeries.MAD_CONST * mad
+        k = z * StyleFactorsExposureTS.MAD_CONST * mad
         upper = med + k
         lower = med - k
         return series.clip(lower, upper)
@@ -458,7 +458,8 @@ class StyleFactorsTimeSeries(TimeSerie):
         self.benchmark_ts = InterpolatedPrices(
             asset_list=[market_beta_asset_proxy],
             bar_frequency_id=pc.bar_frequency_id, upsample_frequency_id=pc.upsample_frequency_id,
-            intraday_bar_interpolation_rule=pc.intraday_bar_interpolation_rule
+            intraday_bar_interpolation_rule=pc.intraday_bar_interpolation_rule,
+            translation_table_unique_id=assets_configuration.prices_configuration.translation_table_unique_id
         )
 
         self.fundamentals_ts = FundamentalsTimeSeries(assets_category_unique_id=assets_category_unique_id)
@@ -802,7 +803,7 @@ class FactorReturnsTimeSeries(TimeSerie):
                  *args, **kwargs):
         super().__init__(*args, **kwargs, local_kwargs_to_ignore=local_kwargs_to_ignore)
 
-        self.style_ts = StyleFactorsTimeSeries(assets_category_unique_id=assets_category_unique_id,
+        self.style_factor_exposure_ts = StyleFactorsExposureTS(assets_category_unique_id=assets_category_unique_id,
                                                market_beta_asset_proxy=market_beta_asset_proxy,
                                                *args, **kwargs)
 
@@ -818,16 +819,16 @@ class FactorReturnsTimeSeries(TimeSerie):
         # 0 · Fetch stacked prices & exposures for the update window
         # ------------------------------------------------------------------
 
-        prices_asset_list = self.style_ts._get_asset_list()
+        prices_asset_list = self.style_factor_exposure_ts._get_asset_list()
 
         range_descriptor = {a.unique_identifier: {"start_date": update_statistics.max_time_index_value,
                                                   "start_date_operand": ">="
                                                   } for a in prices_asset_list}
 
-        prices_stacked = self.style_ts.prices_ts.get_ranged_data_per_asset(
+        prices_stacked = self.style_factor_exposure_ts.prices_ts.get_ranged_data_per_asset(
             range_descriptor=range_descriptor
         )
-        expos_stacked = self.style_ts.get_ranged_data_per_asset(
+        expos_stacked = self.style_factor_exposure_ts.get_ranged_data_per_asset(
             range_descriptor=range_descriptor
         )
 
@@ -983,7 +984,7 @@ class FactorReturnsTimeSeries(TimeSerie):
         so no asset list is maintained here.
         """
 
-        TS_UID = f"{CANONICAL_FACTOR_RETURNS_ID}_{self.style_ts.market_beta_asset_proxy.ticker}"
+        TS_UID = f"{CANONICAL_FACTOR_RETURNS_ID}_{self.style_factor_exposure_ts.market_beta_asset_proxy.ticker}"
 
         source_table=self.local_time_serie.remote_table
 
@@ -1005,7 +1006,7 @@ class FactorReturnsTimeSeries(TimeSerie):
                 description=(
                     "Canonical daily returns for the 12 Axioma/Barra style factors "
                     "computed via robust capital‑weighted WLS against the exposure "
-                    f"matrix. using for market proxy {self.style_ts.market_beta_asset_proxy.ticker}"
+                    f"matrix. using for market proxy {self.style_factor_exposure_ts.market_beta_asset_proxy.ticker}"
                 ),
             )
 
@@ -1023,7 +1024,7 @@ class FactorResidualTimeSeries(TimeSerie):
     def __init__(self, assets_category_unique_id: str, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.style_ts = StyleFactorsTimeSeries(assets_category_unique_id=assets_category_unique_id, *args, **kwargs)
+        self.style_ts = StyleFactorsExposureTS(assets_category_unique_id=assets_category_unique_id, *args, **kwargs)
 
     def update(self, update_statistics):
         """

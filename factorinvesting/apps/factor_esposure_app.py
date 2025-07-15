@@ -14,58 +14,50 @@ import tempfile
 
 
 
-
-
-
 class ShockAnalysisConfiguration(BaseModel):
-    factor_name: str = Field(
-        title="Factor Name",
-        description="Factor column name ",
-        example="beta",
-    )
-    factor_shock_multiplier: float = Field(
-        title="Factor Shock",
-        description="The shock multiplier to be applied to a factor f*(1+factor_shock_multiplier)",
-        example=.05,
-    )
+    factor_name: str #= Field(  title="Factor Name",  description="Factor column name ", example="beta",  )
+    factor_shock_multiplier: float #= Field(   title="Factor Shock",
+                                    #          description="The shock multiplier to be applied to a factor f*(1+factor_shock_multiplier)",
+        #example=.05,
+    #)
 
 
 class FactorAnalysisConfiguration(BaseModel):
     """Pydantic model defining the parameters for report generation."""
-    portfolio_ticker: str = Field(
-        title="Portfolio Ticker",
-        description="Ticker of the target_portfolio reference ms_client.Portfolio",
-        example="portfo446B",
-    ),
-    folder_name: str = Field(default="Factor Analysis Reports",
-                             title="Folder Name",
-                             description="Name of the folder where the report will be saved",
-                             example="Temp Folder",
-                             )
+    portfolio_ticker: str #= Field(
+    #     title="Portfolio Ticker",
+    #     description="Ticker of the target_portfolio reference ms_client.Portfolio",
+    #     example="portfo446B",
+    # ),
+    folder_name: str #= Field(default="Factor Analysis Reports",
+                             # title="Folder Name",
+                             # description="Name of the folder where the report will be saved",
+                             # example="Temp Folder",
+                             # )
 
     calculate_historical_exposures: bool = True
     calculate_factor_attribution: bool = True
     calculate_tail_exposure: bool = True
     calculate_exposure_correlation_matrix: bool = True
     shocks_configuration: Optional[List[ShockAnalysisConfiguration]] = None
-    start_date: datetime.datetime = Field(
-        ...,
-        title="Start Date",
-        description="Inclusive start datetime for the analysis (must include timezone)",
-        example="2025-07-01T00:00:00+02:00",
-    )
-    end_date: datetime.datetime = Field(
-        ...,
-        title="End Date",
-        description="Inclusive end datetime for the analysis (must include timezone)",
-        example="2025-07-31T23:59:59+02:00",
-    )
+    start_date: str #= Field(
+    #     ...,
+    #     title="Start Date",
+    #     description="Inclusive start datetime for the analysis (must include timezone)",
+    #     example="2025-07-01T00:00:00+02:00",
+    # )
+    end_date: str #= Field(
+    #     ...,
+    #     title="End Date",
+    #     description="Inclusive end datetime for the analysis (must include timezone)",
+    #     example="2025-07-31T23:59:59+02:00",
+    # )
 
-    presentation_theme: Optional[str] = Field(default="Main Sequence Corporate",
-                                    title="Presentation Theme",
-                                    description="Theme to use in the presentation",
-                                    example="Main Sequence Corporate",
-                                    )
+    presentation_theme: Optional[str] #= Field(default="Main Sequence",
+                                    # title="Presentation Theme",
+                                    # description="Theme to use in the presentation",
+                                    # example="Main Sequence",
+                                    # )
 
 
 @register_app()
@@ -109,9 +101,11 @@ class FactorExposureApp(HtmlApp):
     def _get_slide(self, presentation, index: int):
         """Return the slide at *index*, creating empty slides until it exists."""
         presentation=ms_client.Presentation.get(pk=presentation.id)
-        while len(presentation.slides) <= index:
-            presentation.add_slide()
-        return presentation.slides[index]
+        if len(presentation.slides) <= index:
+            slide=presentation.add_slide()
+        else:
+            slide=presentation.slides[index]
+        return slide
 
     def _patch_slide(
             self,
@@ -150,8 +144,8 @@ class FactorExposureApp(HtmlApp):
 
         pfa = PortfolioFactorAnalysis(portfolio_weights=latest_weights,
                                       factor_returns_ts=factor_returns_ts,
-                                      start_date=self.configuration.start_date,
-                                      end_date=self.configuration.end_date,
+                                      start_date=pd.to_datetime(self.configuration.start_date).replace(tzinfo=pytz.utc),
+                                      end_date=pd.to_datetime(self.configuration.end_date).replace(tzinfo=pytz.utc)
                                       )
 
         #### report data
@@ -161,9 +155,8 @@ class FactorExposureApp(HtmlApp):
             folder=self.folder.id,
             description=f"Automatically generated presentation for for {self.configuration.portfolio_ticker}",
             )
-        # theme=ms_client.Theme.filter(name=self.configuration.presentation_theme)
-        # theme=[c for c in theme if c.name==self.configuration.representation_theme][0]
-        # presentation.patch(theme=theme.id)
+        theme=ms_client.Theme.get(name=self.configuration.presentation_theme)
+        presentation.patch(theme_id=theme.id)
         presentation.theme.set_plotly_theme()
 
 
@@ -194,8 +187,8 @@ class FactorExposureApp(HtmlApp):
                 artifact_id=art_id,
                 note=(
                     f"Exposures calculated from "
-                    f"{self.configuration.start_date.strftime('%d-%b-%y')} – "
-                    f"{self.configuration.end_date.strftime('%d-%b-%y')}"
+                    f"{self.configuration.start_date} – "
+                    f"{self.configuration.end_date}"
                 )
             )
 
@@ -203,6 +196,8 @@ class FactorExposureApp(HtmlApp):
         if self.configuration.calculate_factor_attribution:
             bar = contrib.loc[last_date].reset_index(name="Contribution")
             fig = px.bar(bar, x='index', y='Contribution',
+                         color="Contribution",  # <-- map bar color to the numeric value
+
                          title=f'Factor P&L Contributions on {last_date.date()}')
             html = fig.to_html(full_html=False, include_plotlyjs="cdn",
                                config={"responsive": True, "displayModeBar": False})

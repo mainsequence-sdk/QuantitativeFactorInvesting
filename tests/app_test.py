@@ -9,12 +9,15 @@ if __name__ == "__main__":
     PORTFOLIO_TICKER="portfo446B"#"portfo446B" #"portfo505B"
 
 
-    folder=ms_client.Folder.filter()[-1]
+    # folder=ms_client.Folder.filter()[-1]
     # presentation = ms_client.Presentation.get_or_create_by_title(title="asdfasdfasdf",
     #                                                     folder=folder.id,
     #                                                     description="Test Presentation"
     #                                                     )
     # presentation.add_slide()
+    # theme=ms_client.Theme.filter()[0]
+    # presentation.patch(theme_id=theme.id)
+
     # target_slide=presentation.slides[0]
     # target_body=json.loads(target_slide.body)
     # target_body["content"].append(ms_client.TextParagraph.paragraph(
@@ -40,9 +43,11 @@ if __name__ == "__main__":
                                        )]
     app_configuration=FactorAnalysisConfiguration(
         portfolio_ticker=PORTFOLIO_TICKER,
-        start_date=datetime.datetime(2020, 1, 1,tzinfo=pytz.utc),
-        end_date=datetime.datetime(2025, 1, 1,tzinfo=pytz.utc),
+        start_date="2020-01-01",
+        end_date="2025-01-01",
         shocks_configuration=shocks,
+        folder_name="Factor Analysis Reports",
+        presentation_theme="Main Sequence"
 
     )
 

@@ -87,7 +87,6 @@ class FamaFrench3FactorTimeSerie(TimeSerie):
     - Canonical _run_post_update_routines for registering the time series in the platform with a clear name and description.
     - Can be used as a template for other macro, economic, or factor time series.
     """
-    @TimeSerie._post_init_routines()
     def __init__(self, *args, **kwargs):
         """
         Initialize the FamaFrench3FactorTimeSerie.
@@ -166,7 +165,7 @@ class FamaFrench3FactorTimeSerie(TimeSerie):
             )
         # No asset logic, as this time series does not have assets
 
-    def _get_column_metadata(self):
+    def get_column_metadata(self):
         """
         Provide rich metadata for each column in the time series.
         This improves interpretability and downstream usage in the MainSequence platform.
@@ -225,7 +224,6 @@ class ThreeFFLoadingsTimeSerie(TimeSerie):
         - Detailed docstrings and comments for clarity and reusability.
     """
 
-    @TimeSerie._post_init_routines()
     def __init__(self,  assets_category_unique_id: str,rolling_window: int = 60, local_kwargs_to_ignore = ["assets_category_unique_id"], *args, **kwargs):
         """
         Initialize the ThreeFFLoadingsTimeSerie.
@@ -250,7 +248,7 @@ class ThreeFFLoadingsTimeSerie(TimeSerie):
         super().__init__(*args, local_kwargs_to_ignore=local_kwargs_to_ignore, **kwargs)
 
 
-    def _get_asset_list(self) ->Union[None, list]:
+    def get_asset_list(self) ->Union[None, list]:
         """
         Returns the list of assets to be included in the time series calculations.
 
@@ -275,7 +273,7 @@ class ThreeFFLoadingsTimeSerie(TimeSerie):
         Compute rolling Fama-French 3-factor loadings (betas) for each asset in the dynamically fetched asset universe.
 
         This method demonstrates the canonical MainSequence pattern for asset-based time series with dependencies:
-        - The asset universe is dynamically fetched using self._get_asset_list(), allowing for flexible universes.
+        - The asset universe is dynamically fetched using self.get_asset_list(), allowing for flexible universes.
         - Price data is fetched using self.prices_ts, which is configured in the constructor.
         - Factor data is fetched using self.factors_ts, a dependency time series.
         - Rolling OLS regressions are computed for each asset over the specified window.
@@ -293,7 +291,7 @@ class ThreeFFLoadingsTimeSerie(TimeSerie):
             columns: ['mkt_loading', 'smb_loading', 'hml_loading'] (all lowercase, float).
         """
         # Dynamically fetch the asset universe
-        asset_list = self._get_asset_list()
+        asset_list = self.get_asset_list()
         if not asset_list:
             return pd.DataFrame()
 

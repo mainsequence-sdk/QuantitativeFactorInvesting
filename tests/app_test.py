@@ -1,6 +1,6 @@
 import pytz
 import json
-from factorinvesting.apps.factor_esposure_app import (FactorExposureApp,FactorAnalysisConfiguration,
+from factorinvesting.apps.factor_exposure_app import (FactorExposureApp,FactorAnalysisConfiguration,
                                                       ShockAnalysisConfiguration)
 import mainsequence.client as ms_client
 import datetime

@@ -128,7 +128,6 @@ class FundamentalsTimeSeries(TimeSerie):
     Refactors the logic from `get_fundamentals_polygon`.
     """
 
-    @TimeSerie._post_init_routines()
     def __init__(self, assets_category_unique_id: str,
                  local_kwargs_to_ignore=["assets_category_unique_id"],
                  *args, **kwargs):
@@ -136,7 +135,7 @@ class FundamentalsTimeSeries(TimeSerie):
         self.assets_category_unique_id = assets_category_unique_id
         self.polygon_client = client
 
-    def _get_asset_list(self) -> Optional[List["Asset"]]:
+    def get_asset_list(self) -> Optional[List["Asset"]]:
 
         asset_ids = ms_client.AssetCategory.get(unique_identifier=self.assets_category_unique_id).assets
         asset_list = ms_client.Asset.filter(id__in=asset_ids)
@@ -222,7 +221,7 @@ class FundamentalsTimeSeries(TimeSerie):
 
         return df.sort_index()
 
-    def _get_column_metadata(self):
+    def get_column_metadata(self):
         """
         Return a `List[ColumnMetaData]` describing every annual fundamental
         field that the `update()` method writes into the DataFrame.
@@ -275,8 +274,27 @@ class FundamentalsTimeSeries(TimeSerie):
         ]
 
     # ──────────────────────────────────────────────────────────────
-    # 2 ▸ Post‑update bookkeeping
     # ──────────────────────────────────────────────────────────────
+
+    def get_table_metadata(self,update_statistics)->ms_client.TableMetaData:
+        """
+
+        """
+        freq_enum =getattr(ms_client.DataFrequency, "one_y", None)
+
+        CANONICAL_FUNDAMENTALS_ID = "polygon_annual_fundamentals"
+        meta=ms_client.TableMetaData(  identifier=CANONICAL_FUNDAMENTALS_ID,
+                data_frequency_id=freq_enum,
+                description=(
+                    "Canonical annual fundamentals downloaded from Polygon.io "
+                    "(balance‑sheet, income‑statement and cash‑flow items) for "
+                    "every covered equity."
+                ),
+                                               )
+
+
+        return meta
+
     def _run_post_update_routines(self, error_on_last_update,
                                   update_statistics: ms_client.DataUpdates):
         """
@@ -424,7 +442,6 @@ class StyleFactorsExposureTS(TimeSerie):
             betas[col] = cov / var if var != 0 else np.nan
         return pd.Series(betas)
 
-    @TimeSerie._post_init_routines()
     def __init__(self, assets_category_unique_id: str, market_beta_asset_proxy: ms_client.Asset,
                  em_winsor_days: int = 0,
                  em_min_obs: int = 0,
@@ -465,7 +482,7 @@ class StyleFactorsExposureTS(TimeSerie):
         self.fundamentals_ts = FundamentalsTimeSeries(assets_category_unique_id=assets_category_unique_id)
         self.market_beta_asset_proxy = market_beta_asset_proxy
 
-    def _get_asset_list(self) -> Optional[List["Asset"]]:
+    def get_asset_list(self) -> Optional[List["Asset"]]:
 
         asset_ids = ms_client.AssetCategory.get(unique_identifier=self.assets_category_unique_id).assets
 
@@ -718,7 +735,7 @@ class StyleFactorsExposureTS(TimeSerie):
 
         return expo_df
 
-    def _get_column_metadata(self):
+    def get_column_metadata(self):
 
         # descriptions drawn from your update(...) implementation
         desc = {
@@ -748,40 +765,25 @@ class StyleFactorsExposureTS(TimeSerie):
             for col, label in STYLE_FACTOR_MAP.items()
         ]
 
-    def  _run_post_update_routines(self, error_on_last_update,update_statistics:ms_client.DataUpdates):
+    def get_table_metadata(self,update_statistics)->ms_client.TableMetaData:
+        """
 
+        """
         market_beta_asset_proxy=self.market_beta_asset_proxy
 
-        TS_UID = f"{CANONICAL_STYLE_FACTORS_MATRIX_ID}_{market_beta_asset_proxy.ticker}"
+        MARKET_TIME_SERIES_UNIQUE_IDENTIFIER = f"{CANONICAL_STYLE_FACTORS_MATRIX_ID}_{market_beta_asset_proxy.ticker}"
+        meta=ms_client.TableMetaData(identifier=MARKET_TIME_SERIES_UNIQUE_IDENTIFIER,
+                                     data_frequency_id=ms_client.DataFrequency.one_d,
+                                     description=(
+                                         "Canonical daily exposure matrix of the 12 Axioma/Barra style factors. "
+                                         "Each column is the cap-weighted, winsorised and z-scored factor exposure "
+                                         "(one unit of factor return = 1% stock return), ready for downstream risk and attribution."
+                                         f"Using market proxy {self.market_beta_asset_proxy.ticker}"
+                                     ),
+                                               )
 
-        source_table=self.local_time_serie.remote_table
 
-        try:
-            markets_time_series_details = ms_client.MarketsTimeSeriesDetails.get(
-                unique_identifier=TS_UID,
-            )
-            if markets_time_series_details.source_table.id != source_table.id:
-                markets_time_series_details = markets_time_series_details.patch(source_table__id=source_table.id)
-        except ms_client.DoesNotExist:
-            markets_time_series_details = ms_client.MarketsTimeSeriesDetails.update_or_create(
-                unique_identifier=TS_UID,
-                source_table__id=source_table.id,
-                data_frequency_id=ms_client.DataFrequency.one_d,
-                description=(
-                    "Canonical daily exposure matrix of the 12 Axioma/Barra style factors. "
-                    "Each column is the cap-weighted, winsorised and z-scored factor exposure "
-                    "(one unit of factor return = 1% stock return), ready for downstream risk and attribution."
-                    f"Using market proxy {self.market_beta_asset_proxy.ticker}"
-                ),
-
-            )
-
-        new_assets = []
-        for asset in update_statistics.asset_list:
-            if asset.id not in markets_time_series_details.assets_in_data_source:
-                new_assets.append(asset)
-
-        markets_time_series_details.append_asset_list_source(asset_list=new_assets)
+        return meta
 
 
 class FactorReturnsTimeSeries(TimeSerie):
@@ -796,7 +798,6 @@ class FactorReturnsTimeSeries(TimeSerie):
         again.
     """
 
-    @TimeSerie._post_init_routines()
     def __init__(self, assets_category_unique_id: str,
                  market_beta_asset_proxy: ms_client.Asset,
                  local_kwargs_to_ignore=["assets_category_unique_id"],
@@ -819,7 +820,7 @@ class FactorReturnsTimeSeries(TimeSerie):
         # 0 · Fetch stacked prices & exposures for the update window
         # ------------------------------------------------------------------
 
-        prices_asset_list = self.style_factor_exposure_ts._get_asset_list()
+        prices_asset_list = self.style_factor_exposure_ts.get_asset_list()
 
         range_descriptor = {a.unique_identifier: {"start_date": update_statistics.max_time_index_value,
                                                   "start_date_operand": ">="
@@ -931,7 +932,7 @@ class FactorReturnsTimeSeries(TimeSerie):
     # ──────────────────────────────────────────────────────────────
     # 1 ▸ Column metadata  (one entry per factor‑return column)
     # ──────────────────────────────────────────────────────────────
-    def _get_column_metadata(self):
+    def get_column_metadata(self):
         """
         Describe all factor‑return columns stored in this time‑series.
 
@@ -972,46 +973,27 @@ class FactorReturnsTimeSeries(TimeSerie):
         ]
 
     # ──────────────────────────────────────────────────────────────
-    # 2 ▸ Post‑update bookkeeping  (register this time‑series)
+    #  (register this time‑series)
     # ──────────────────────────────────────────────────────────────
-    def _run_post_update_routines(self, error_on_last_update,
-                                  update_statistics: ms_client.DataUpdates):
+    def get_table_metadata(self,update_statistics)->ms_client.TableMetaData:
         """
-        Register (or patch) the canonical **factor‑return** time‑series with
-        `MarketsTimeSeriesDetails` so downstream services can discover it.
+        REturns the market time serie unique identifier, assets to append , or asset to overwrite
+        Returns:
 
-        Unlike the exposure matrix, factor returns are *not security‑specific*,
-        so no asset list is maintained here.
         """
+        MARKET_TIME_SERIES_UNIQUE_IDENTIFIER = f"{CANONICAL_FACTOR_RETURNS_ID}_{self.style_factor_exposure_ts.market_beta_asset_proxy.ticker}"
+        mts=ms_client.TableMetaData(identifier=MARKET_TIME_SERIES_UNIQUE_IDENTIFIER,
+                                               data_frequency_id=ms_client.DataFrequency.one_d,
+                                               description=(
+                                                   "Canonical daily returns for the 12 Axioma/Barra style factors "
+                                                   "computed via robust capital‑weighted WLS against the exposure "
+                                                   f"matrix. using for market proxy {self.style_factor_exposure_ts.market_beta_asset_proxy.ticker}"
+                                               ),
+                                               )
 
-        TS_UID = f"{CANONICAL_FACTOR_RETURNS_ID}_{self.style_factor_exposure_ts.market_beta_asset_proxy.ticker}"
 
-        source_table=self.local_time_serie.remote_table
+        return mts
 
-        try:
-            mts = ms_client.MarketsTimeSeriesDetails.get(
-                unique_identifier=TS_UID
-            )
-
-            # Ensure it points at the same local_time_serie we just updated
-            if mts.source_table.id !=  source_table.id:
-                mts = mts.patch(source_table__id=source_table.id)
-
-        except ms_client.DoesNotExist:
-            # Create the record the first time we run
-            mts = ms_client.MarketsTimeSeriesDetails.update_or_create(
-                unique_identifier=TS_UID,
-                source_table__id=source_table.id,
-                data_frequency_id=ms_client.DataFrequency.one_d,
-                description=(
-                    "Canonical daily returns for the 12 Axioma/Barra style factors "
-                    "computed via robust capital‑weighted WLS against the exposure "
-                    f"matrix. using for market proxy {self.style_factor_exposure_ts.market_beta_asset_proxy.ticker}"
-                ),
-            )
-
-        # Factor returns have no per‑asset dimension, so there is no asset list
-        # to append.  The method exits silently once the metadata is in place.
 
 
 class FactorResidualTimeSeries(TimeSerie):
@@ -1020,7 +1002,6 @@ class FactorResidualTimeSeries(TimeSerie):
     regression that lives in FactorReturnsTimeSeries.
     """
 
-    @TimeSerie._post_init_routines()
     def __init__(self, assets_category_unique_id: str, *args, **kwargs):
         super().__init__(*args, **kwargs)
 

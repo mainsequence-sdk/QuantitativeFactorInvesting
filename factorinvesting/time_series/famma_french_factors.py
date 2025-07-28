@@ -99,7 +99,7 @@ class FamaFrench3FactorTimeSerie(TimeSerie):
         Incrementally update the time series with new Fama-French 3-factor data.
 
         Args:
-            update_statistics: DataUpdates object from MainSequence, used to determine the last observation.
+            update_statistics: UpdateStatistics object from MainSequence, used to determine the last observation.
 
         Returns:
             pd.DataFrame: New rows of factor data since the last observation, indexed by 'time_index' (datetime64[ns, UTC]),
@@ -284,7 +284,7 @@ class ThreeFFLoadingsTimeSerie(TimeSerie):
         using one or more dependency time series.
 
         Args:
-            update_statistics: DataUpdates object from MainSequence, used to determine the last observation and filter output.
+            update_statistics: UpdateStatistics object from MainSequence, used to determine the last observation and filter output.
 
         Returns:
             pd.DataFrame: Rolling factor loadings for each asset, indexed by ['time_index', 'unique_identifier'],

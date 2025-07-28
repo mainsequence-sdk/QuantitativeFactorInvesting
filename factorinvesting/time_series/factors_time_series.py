@@ -295,59 +295,6 @@ class FundamentalsTimeSeries(TimeSerie):
 
         return meta
 
-    def _run_post_update_routines(self, error_on_last_update,
-                                  update_statistics: ms_client.DataUpdates):
-        """
-        Register (or patch) the *canonical* annual‑fundamentals time series in
-        `MarketsTimeSeriesDetails` **and** attach any newly processed assets.
-
-        Polygon fundamentals are reported once per year, so we tag the record
-        with an annual frequency when that enum is available; otherwise we fall
-        back to `one_d`.
-        """
-        CANONICAL_FUNDAMENTALS_ID = "polygon_annual_fundamentals"
-
-        # Choose the best‑matching frequency enum that exists in the client.
-        freq_enum = (
-            getattr(ms_client.DataFrequency, "one_y", None)
-            or getattr(ms_client.DataFrequency, "one_a", None)  # alternative naming
-            or ms_client.DataFrequency.one_d
-        )
-
-
-        source_table=self.local_time_serie.remote_table
-
-        try:
-            mts = ms_client.MarketsTimeSeriesDetails.get(
-                unique_identifier=CANONICAL_FUNDAMENTALS_ID
-            )
-
-            # Ensure it points at the same local_time_serie we just updated
-            if mts.source_table.id != source_table.id:
-                mts = mts.patch(source_table__id=source_table.id)
-
-
-
-        except ms_client.DoesNotExist:
-            mts = ms_client.MarketsTimeSeriesDetails.update_or_create(
-                unique_identifier=CANONICAL_FUNDAMENTALS_ID,
-                source_table__id=source_table.id,
-                data_frequency_id=freq_enum,
-                description=(
-                    "Canonical annual fundamentals downloaded from Polygon.io "
-                    "(balance‑sheet, income‑statement and cash‑flow items) for "
-                    "every covered equity."
-                ),
-            )
-
-        # Append any assets from this run that are not yet linked
-        new_assets = [
-            asset for asset in update_statistics.asset_list
-            if asset.id not in mts.assets_in_data_source
-        ]
-        if new_assets:
-            mts.append_asset_list_source(asset_list=new_assets)
-
 
 class StyleFactorsExposureTS(TimeSerie):
     """

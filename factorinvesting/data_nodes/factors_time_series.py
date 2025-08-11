@@ -6,12 +6,12 @@ import numpy as np
 import statsmodels.api as sm
 from typing import Union, Optional, List, Dict
 
-from mainsequence.tdag import TimeSerie
+from mainsequence.tdag import DataNode
 import mainsequence.client as ms_client
-from mainsequence.virtualfundbuilder.contrib.prices.time_series import get_interpolated_prices_timeseries
+from mainsequence.virtualfundbuilder.contrib.prices.data_nodes import get_interpolated_prices_timeseries
 from mainsequence.virtualfundbuilder.models import AssetsConfiguration, PricesConfiguration
 from mainsequence.virtualfundbuilder.enums import PriceTypeNames
-from mainsequence.virtualfundbuilder.contrib.prices.time_series import InterpolatedPrices
+from mainsequence.virtualfundbuilder.contrib.prices.data_nodes import InterpolatedPrices
 from polygon import RESTClient
 # from polygon.reference_apis import ReferenceClient # Commenting out incorrect import
 from tqdm import tqdm
@@ -122,18 +122,19 @@ def fy_dividend_yield_avg(polygon_client, ticker: str, fiscal_year: int, logger=
     return np.nanmean(yields) if yields else np.nan
 
 
-class FundamentalsTimeSeries(TimeSerie):
+class FundamentalsDataNode(DataNode):
     """
     Fetches and caches annual fundamental data from Polygon.io.
     Refactors the logic from `get_fundamentals_polygon`.
     """
-
+    _ARGS_IGNORE_IN_STORAGE_HASH = ["assets_category_unique_id"]
     def __init__(self, assets_category_unique_id: str,
-                 local_kwargs_to_ignore=["assets_category_unique_id"],
                  *args, **kwargs):
-        super().__init__(*args, **kwargs, local_kwargs_to_ignore=local_kwargs_to_ignore)
+        super().__init__(*args, **kwargs,)
         self.assets_category_unique_id = assets_category_unique_id
         self.polygon_client = client
+    def dependencies(self) -> Dict[str, Union["DataNode", "APIDataNode"]]:
+        return {}
 
     def get_asset_list(self) -> Optional[List["Asset"]]:
 
@@ -141,10 +142,10 @@ class FundamentalsTimeSeries(TimeSerie):
         asset_list = ms_client.Asset.filter(id__in=asset_ids)
         return asset_list
 
-    def update(self, update_statistics):
+    def update(self):
         # Fundamentals are annual, so we don't need to update daily.
         # We'll update if there's no data or if the last update was > 90 days ago.
-
+        return pd.DataFrame()
         def common_calendar_year(end_ts: pd.Timestamp) -> int:
             """
             Map *any* fiscal year that ends in Jan–Mar back to the previous
@@ -155,15 +156,16 @@ class FundamentalsTimeSeries(TimeSerie):
 
         current_date = datetime.datetime.now(pytz.utc)
         uid_to_update = []
-        for uid, last_update_time in update_statistics.update_statistics.items():
+        for asset in self.update_statistics.asset_list:
+            last_update_time=self.update_statistics.get_last_update_index_2d(asset.unique_identifier)
             if (current_date - last_update_time) > datetime.timedelta(days=364):
-                uid_to_update.append(uid)
+                uid_to_update.append(asset.unique_identifier)
 
-        if len(uid) == 0:
+        if len(uid_to_update) == 0:
             return pd.DataFrame()
 
         records = []
-        for asset in tqdm(update_statistics.asset_list, desc="getting assets_fundamentals"):
+        for asset in tqdm(self.update_statistics.asset_list, desc="getting assets_fundamentals"):
             if asset.unique_identifier not in uid_to_update:
                 continue
             try:
@@ -276,7 +278,7 @@ class FundamentalsTimeSeries(TimeSerie):
     # ──────────────────────────────────────────────────────────────
     # ──────────────────────────────────────────────────────────────
 
-    def get_table_metadata(self,update_statistics)->ms_client.TableMetaData:
+    def get_table_metadata(self)->ms_client.TableMetaData:
         """
 
         """
@@ -296,7 +298,7 @@ class FundamentalsTimeSeries(TimeSerie):
         return meta
 
 
-class StyleFactorsExposureTS(TimeSerie):
+class StyleFactorsExposureTS(DataNode):
     """
     Builds the twelve classic style exposures from MSCI-Barra / Qontigo-Axioma.
     This class orchestrates data dependencies and applies the factor construction
@@ -305,6 +307,8 @@ class StyleFactorsExposureTS(TimeSerie):
     MAD_CONST = 1.4826  # For winsorisation
     EM_WINSOR_DAYS = 60  # pooled window for emerging markets
     EM_MIN_OBS = 120  # min valid obs before falling back to pool
+    _ARGS_IGNORE_IN_STORAGE_HASH=["assets_category_unique_id"]
+
 
     # ---------------------------------------------------------------------
     # 🛠️  Descriptor hygiene – winsorisation
@@ -392,10 +396,8 @@ class StyleFactorsExposureTS(TimeSerie):
     def __init__(self, assets_category_unique_id: str, market_beta_asset_proxy: ms_client.Asset,
                  em_winsor_days: int = 0,
                  em_min_obs: int = 0,
-
-                 local_kwargs_to_ignore=["assets_category_unique_id"],
                  *args, **kwargs):
-        super().__init__(*args, **kwargs, local_kwargs_to_ignore=local_kwargs_to_ignore)
+        super().__init__(*args, **kwargs,)
 
         # --- Debugging import issue ---
         print("Inspecting polygon package contents:")
@@ -426,17 +428,26 @@ class StyleFactorsExposureTS(TimeSerie):
             translation_table_unique_id=assets_configuration.prices_configuration.translation_table_unique_id
         )
 
-        self.fundamentals_ts = FundamentalsTimeSeries(assets_category_unique_id=assets_category_unique_id)
+        self.fundamentals_ts = FundamentalsDataNode(assets_category_unique_id=assets_category_unique_id)
         self.market_beta_asset_proxy = market_beta_asset_proxy
+
+    def dependencies(self) -> Dict[str, Union["DataNode", "APIDataNode"]]:
+        return {"fundamentals_ts": self.fundamentals_ts,
+                "prices_ts": self.prices_ts,
+                "benchmark_ts":self.benchmark_ts,
+                }
 
     def get_asset_list(self) -> Optional[List["Asset"]]:
 
         asset_ids = ms_client.AssetCategory.get(unique_identifier=self.assets_category_unique_id).assets
 
         asset_list = ms_client.Asset.filter(id__in=asset_ids + [self.market_beta_asset_proxy.id])
+
+
+
         return asset_list
 
-    def update(self, update_statistics):
+    def update(self):
         """
         Build (or refresh) each trading-day’s exposure matrix for the classic
         12 USE4 / AXUS4 style factors.
@@ -472,7 +483,7 @@ class StyleFactorsExposureTS(TimeSerie):
         # --------------------------------------------------------------
         # 0.  Pull ~3 y of history so all rolling windows are available
         # --------------------------------------------------------------
-        range_descriptor = update_statistics.get_update_range_map_great_or_equal()
+        range_descriptor = self.update_statistics.get_update_range_map_great_or_equal()
         for uid, val in range_descriptor.items():
             val["start_date"] -= datetime.timedelta(days=750)  # ≈ 3 y
 
@@ -516,7 +527,7 @@ class StyleFactorsExposureTS(TimeSerie):
         # 2.  Pre-compute rolling / raw descriptors for the full panel
         # ────────────────────────────────────────────────────────────────
 
-        # ⚙️ Size  (Barra USE4 §3.2 “Size”) TODO: this is WRONG we dont have the proper Point if Time for shares outstanding
+        # ⚙️ Size  (Barra USE4 §3.2 “Size”) TODO: this is WRONG we dont have the proper Point if Time for shares outstanding but can work as proxy
         #    Log-market-cap compresses the extreme right tail so the factor is
         #    approximately symmetric; forward regressions then behave linearly.
         sh_out = fund_all.xs("basic_average_shares", level=0, axis=1)
@@ -661,7 +672,9 @@ class StyleFactorsExposureTS(TimeSerie):
                 )
 
                 # Neutral‑fill (median) so the z‑score lands at 0 for missing
-                s_f = s_w.fillna(s_w.median())
+                s_f=s_w
+                if s_w.isna().all() ==False:
+                    s_f = s_w.fillna(s_w.median())
 
                 ex_today[fac] = self._standardise(s_f, cap_w_today)
 
@@ -712,7 +725,7 @@ class StyleFactorsExposureTS(TimeSerie):
             for col, label in STYLE_FACTOR_MAP.items()
         ]
 
-    def get_table_metadata(self,update_statistics)->ms_client.TableMetaData:
+    def get_table_metadata(self)->ms_client.TableMetaData:
         """
 
         """
@@ -733,32 +746,31 @@ class StyleFactorsExposureTS(TimeSerie):
         return meta
 
 
-class FactorReturnsTimeSeries(TimeSerie):
+class FactorReturnsDataNodes(DataNode):
     """
     Stores the daily factor-return vectors fₜ.
 
     Parameters
     ----------
-    style_ts : StyleFactorsTimeSeries
-        An *already-constructed* StyleFactorsTimeSeries instance.  We reuse
+    style_ts : StyleFactorsDataNodes
+        An *already-constructed* StyleFactorsDataNodes instance.  We reuse
         its prices, market-cap and exposure matrix instead of querying data
         again.
     """
-
+    _ARGS_IGNORE_IN_STORAGE_HASH = ["assets_category_unique_id"]
     def __init__(self, assets_category_unique_id: str,
                  market_beta_asset_proxy: ms_client.Asset,
-                 local_kwargs_to_ignore=["assets_category_unique_id"],
                  *args, **kwargs):
-        super().__init__(*args, **kwargs, local_kwargs_to_ignore=local_kwargs_to_ignore)
+        super().__init__(*args, **kwargs,)
 
         self.style_factor_exposure_ts = StyleFactorsExposureTS(assets_category_unique_id=assets_category_unique_id,
                                                market_beta_asset_proxy=market_beta_asset_proxy,
                                                *args, **kwargs)
 
-    def update(self, update_statistics):
+    def update(self):
         """
         Compute daily factor-return vectors fₜ by robust WLS on the exposure
-        matrix produced by the companion StyleFactorsTimeSeries.  Assumes
+        matrix produced by the companion StyleFactorsDataNodes.  Assumes
         the stacked exposure frame contains a column named **'market_cap'**.
         Returns the residual panel (εᵢ,ₜ) so the caller can pipe it into a
         residual time-series.
@@ -769,7 +781,7 @@ class FactorReturnsTimeSeries(TimeSerie):
 
         prices_asset_list = self.style_factor_exposure_ts.get_asset_list()
 
-        range_descriptor = {a.unique_identifier: {"start_date": update_statistics.max_time_index_value,
+        range_descriptor = {a.unique_identifier: {"start_date": self.update_statistics.max_time_index_value,
                                                   "start_date_operand": ">="
                                                   } for a in prices_asset_list}
 
@@ -922,7 +934,7 @@ class FactorReturnsTimeSeries(TimeSerie):
     # ──────────────────────────────────────────────────────────────
     #  (register this time‑series)
     # ──────────────────────────────────────────────────────────────
-    def get_table_metadata(self,update_statistics)->ms_client.TableMetaData:
+    def get_table_metadata(self)->ms_client.TableMetaData:
         """
         REturns the market time serie unique identifier, assets to append , or asset to overwrite
         Returns:
@@ -943,70 +955,6 @@ class FactorReturnsTimeSeries(TimeSerie):
 
 
 
-class FactorResidualTimeSeries(TimeSerie):
-    """
-    Stores ε₍ᵢ,ₜ₎  – the idiosyncratic residuals produced by the robust
-    regression that lives in FactorReturnsTimeSeries.
-    """
-
-    def __init__(self, assets_category_unique_id: str, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        self.style_ts = StyleFactorsExposureTS(assets_category_unique_id=assets_category_unique_id, *args, **kwargs)
-
-    def update(self, update_statistics):
-        """
-        1.  Call the style engine to refresh exposures (and mkt-cap).
-        2.  For every new trading day, run the robust cross-sectional
-            regression  rₜ = Xₜ fₜ + εₜ   but keep *only* εₜ.
-        3.  Append εₜ to this TimeSerie and return the panel.
-
-        Returns
-        -------
-        pd.DataFrame
-            Index  : time_index (date) × unique_identifier (ticker)
-            Columns: single 'residual' column of specific returns.
-            Empty DataFrame if no new dates were processed.
-        """
-        # 1 · update exposures; we need expo_df & mkt_cap for the regression
-        expo_df = self.style_ts.update(update_statistics)
-        if expo_df.empty:
-            return pd.DataFrame()
-
-        prices = self.style_ts.prices_ts.get_dataframe()
-        mkt_cap = self.style_ts.mkt_cap
-        daily_ret = prices.pct_change()  # todo: Properly this needs to be excess return
-
-        resid_frames = []
-
-        # 2 · loop over each date block from exposures
-        for dt, X in expo_df.groupby(level="time_index"):
-            if dt not in daily_ret.index:
-                continue
-            y = daily_ret.loc[dt, X.index.get_level_values(1)].astype(float)
-            Xmat = X.droplevel("time_index")  # ticker × factor
-            W = np.sqrt(mkt_cap.loc[dt, Xmat.index])  # √cap weights
-
-            rlm = sm.RLM(y, sm.add_constant(Xmat),
-                         M=sm.robust.norms.HuberT(), weights=W)
-            res = rlm.fit()
-
-            # store residuals (one column per ticker)
-            resid_frames.append(
-                res.resid.to_frame(name=dt).T  # shape 1 × tickers
-            )
-
-        if not resid_frames:
-            return pd.DataFrame()  # nothing new this call
-
-        residuals_df = pd.concat(resid_frames).sort_index()
-        # stack into (date, ticker) rows & single 'residual' column
-        residuals_df = residuals_df.stack().to_frame(name="residual")
-        residuals_df.index.names = ["time_index", "unique_identifier"]
-
-        # 3 · persist and return
-        self.append_dataframe(residuals_df)
-        return residuals_df
 
 
 

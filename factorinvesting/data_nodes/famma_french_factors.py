@@ -1,8 +1,8 @@
 # cursor_test.py
-# MainSequence TimeSeries: Fama-French 3-Factor Model Example
+# MainSequence DataNodes: Fama-French 3-Factor Model Example
 # This script demonstrates how to build a time series pipeline for the Fama-French 3-factor model using the mainsequence SDK.
 
-from mainsequence.tdag import TimeSerie, APITimeSerie
+from mainsequence.tdag import DataNode, APIDataNode
 import mainsequence.client as ms_client
 
 import datetime
@@ -11,8 +11,7 @@ import pandas as pd
 import requests
 import io
 import numpy as np
-from mainsequence.virtualfundbuilder.contrib.prices.time_series import get_interpolated_prices_timeseries
-from mainsequence.tdag.time_series import ModelList
+from mainsequence.virtualfundbuilder.contrib.prices.data_nodes import get_interpolated_prices_timeseries
 from mainsequence.virtualfundbuilder.models import AssetsConfiguration, PricesConfiguration
 from mainsequence.virtualfundbuilder.enums import PriceTypeNames
 from typing import Union
@@ -70,9 +69,9 @@ def fetch_ff3_factors():
                         raise RuntimeError(f"Error parsing Fama-French CSV: {e}")
     raise RuntimeError('Could not find Fama-French CSV in zip file')
 
-class FamaFrench3FactorTimeSerie(TimeSerie):
+class FamaFrench3FactorDataNode(DataNode):
     """
-    MainSequence TimeSerie for the Fama-French 3-factor model.
+    MainSequence DataNode for the Fama-French 3-factor model.
 
     This class demonstrates how to build a robust, historical, non-asset time series for use in the MainSequence platform.
     It fetches the Fama-French 3-factor data (MKT, SMB, HML) from the Kenneth French Data Library,
@@ -89,7 +88,7 @@ class FamaFrench3FactorTimeSerie(TimeSerie):
     """
     def __init__(self, *args, **kwargs):
         """
-        Initialize the FamaFrench3FactorTimeSerie.
+        Initialize the FamaFrench3FactorDataNode.
         No dependencies are required for this macro factor time series.
         """
         super().__init__(*args, **kwargs)
@@ -151,13 +150,13 @@ class FamaFrench3FactorTimeSerie(TimeSerie):
             "downloaded from the Kenneth French Data Library."
         )
         try:
-            markets_time_series_details = ms_client.MarketsTimeSeriesDetails.get(
+            markets_time_series_details = ms_client.MarketsDataNodesDetails.get(
                 unique_identifier=MARKET_TIME_SERIES_UNIQUE_IDENTIFIER,
             )
             if markets_time_series_details.related_local_time_serie.id != self.local_time_serie.id:
                 markets_time_series_details = markets_time_series_details.patch(related_local_time_serie__id=self.local_time_serie.id)
         except ms_client.DoesNotExist:
-            markets_time_series_details = ms_client.MarketsTimeSeriesDetails.update_or_create(
+            markets_time_series_details = ms_client.MarketsDataNodesDetails.update_or_create(
                 unique_identifier=MARKET_TIME_SERIES_UNIQUE_IDENTIFIER,
                 related_local_time_serie__id=self.local_time_serie.id,
                 data_frequency_id=ms_client.DataFrequency.one_d,
@@ -201,13 +200,13 @@ class FamaFrench3FactorTimeSerie(TimeSerie):
         ]
         return columns_metadata
 
-class ThreeFFLoadingsTimeSerie(TimeSerie):
+class ThreeFFLoadingsDataNode(DataNode):
     """
-    MainSequence TimeSerie for rolling Fama-French 3-factor loadings (betas) for a list of assets.
+    MainSequence DataNode for rolling Fama-French 3-factor loadings (betas) for a list of assets.
 
     This class computes rolling regression loadings (betas) of asset returns on the Fama-French 3 factors (MKT, SMB, HML)
     for a given asset list and rolling window. It uses get_interpolated_prices_timeseries to fetch asset price data and
-    fetches FamaFrench3FactorTimeSerie data as a dependency using get_df_between_dates.
+    fetches FamaFrench3FactorDataNode data as a dependency using get_df_between_dates.
 
     Inputs:
         - rolling_window: int, the window size (in days) for the rolling regression.
@@ -226,7 +225,7 @@ class ThreeFFLoadingsTimeSerie(TimeSerie):
 
     def __init__(self,  assets_category_unique_id: str,rolling_window: int = 60, local_kwargs_to_ignore = ["assets_category_unique_id"], *args, **kwargs):
         """
-        Initialize the ThreeFFLoadingsTimeSerie.
+        Initialize the ThreeFFLoadingsDataNode.
         Args:
             assets_category_unique_id (str): Unique identifier for the asset category to compute loadings for.
             rolling_window (int): Window size for rolling regression (default: 60 days).
@@ -244,7 +243,7 @@ class ThreeFFLoadingsTimeSerie(TimeSerie):
 
         self.prices_ts = get_interpolated_prices_timeseries(assets_configuration)
 
-        self.factors_ts = FamaFrench3FactorTimeSerie()
+        self.factors_ts = FamaFrench3FactorDataNode()
         super().__init__(*args, local_kwargs_to_ignore=local_kwargs_to_ignore, **kwargs)
 
 
@@ -253,7 +252,7 @@ class ThreeFFLoadingsTimeSerie(TimeSerie):
         Returns the list of assets to be included in the time series calculations.
 
         This method overrides the default asset selection logic by filtering and returning only the assets
-        specified by the assets_category_unique_id associated with this TimeSerie. This allows update_statistics
+        specified by the assets_category_unique_id associated with this DataNode. This allows update_statistics
         and other methods to operate only on the requested subset of assets, rather than the full asset universe.
         The returned list is wrapped in a ModelList for compatibility with MainSequence asset-based workflows.
 
@@ -364,5 +363,5 @@ if __name__ == "__main__":
     # To use a different universe, change the assets_category_unique_id argument below
     assets_category_unique_id = 's&p500_constitutents'
     rolling_window = 252 * 4  # 4 years of daily data
-    ts = ThreeFFLoadingsTimeSerie(assets_category_unique_id=assets_category_unique_id, rolling_window=rolling_window)
+    ts = ThreeFFLoadingsDataNode(assets_category_unique_id=assets_category_unique_id, rolling_window=rolling_window)
     ts.run(debug_mode=True, force_update=True) 

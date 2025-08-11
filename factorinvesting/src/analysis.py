@@ -12,7 +12,7 @@ class PortfolioFactorAnalysis:
     """
     Perform factor-based analyses on a portfolio given:
 
-      - factor_returns_ts: a FactorReturnsTimeSeries instance that:
+      - factor_returns_ts: a FactorReturnsDataNodes instance that:
           * Provides historical factor returns via get_df_between_dates()
           * Exposes style_ts for factor exposures and prices via .style_ts
 
@@ -37,7 +37,7 @@ class PortfolioFactorAnalysis:
     """
 
     def __init__(self,
-                 factor_returns_ts:tdag.TimeSerie,
+                 factor_returns_ts:tdag.DataNode,
                  portfolio_weights: pd.Series,
                  start_date: datetime.datetime = None,
                  end_date: datetime.datetime = None):
@@ -46,7 +46,7 @@ class PortfolioFactorAnalysis:
 
         Parameters
         ----------
-        factor_returns_ts : FactorReturnsTimeSeries
+        factor_returns_ts : FactorReturnsDataNodes
             Supplies factor returns and has .style_ts for exposures & prices.
         portfolio_weights : pd.Series, optional
             Weights of assets in the portfolio (indexed by unique_identifier). Must sum to 1.

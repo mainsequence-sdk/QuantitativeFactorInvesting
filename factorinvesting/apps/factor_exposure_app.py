@@ -2,7 +2,7 @@ from mainsequence.virtualfundbuilder.resource_factory.app_factory import registe
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from factorinvesting.src.analysis import PortfolioFactorAnalysis
-from factorinvesting.time_series.factors_time_series import *
+from factorinvesting.data_nodes.factors_time_series import *
 import datetime
 import mainsequence.client as ms_client
 from mainsequence.reportbuilder.slide_templates import plot_dataframe_line_chart,generic_plotly_bar_chart
@@ -138,7 +138,7 @@ class FactorExposureApp(HtmlApp):
                                            security_market_sector=ms_client.MARKETS_CONSTANTS.FIGI_MARKET_SECTOR_EQUITY,
                                            )
 
-        factor_returns_ts = FactorReturnsTimeSeries(assets_category_unique_id='s&p500_constitutents',
+        factor_returns_ts = FactorReturnsDataNodes(assets_category_unique_id='s&p500_constitutents',
                                                     market_beta_asset_proxy=market_asset,
                                                     )
 

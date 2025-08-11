@@ -103,6 +103,10 @@ class PortfolioFactorAnalysis:
                 start_date=self.start_date,
                 end_date=self.end_date
             )
+
+            if fr.empty:
+                raise Exception(f"There is no factor return data from {self.start_date} to {self.end_date}")
+
             self._factor_ret_df = fr
         return self._factor_ret_df
 
@@ -378,11 +382,16 @@ class PortfolioFactorAnalysis:
         # 2) add intercept
         X.insert(0, 'alpha', 1.0)
 
-        if X.index.sort_values()!=y.index.sort_values():
+        X = X.sort_index()
+        y = y.sort_index()
+
+        if X.index.equals(y.index)==False:
             print("Indices not aligns for date of analisis")
             return None
 
         # 3) fit model (WLS or OLS) with HC1 robust errors
+        X=X.sort_index()
+        y=y.sort_index()
         if asset_weights is not None:
             w = asset_weights.reindex(X.index).fillna(0.0)
             model = sm.WLS(y, X, weights=w).fit(cov_type='HC1')

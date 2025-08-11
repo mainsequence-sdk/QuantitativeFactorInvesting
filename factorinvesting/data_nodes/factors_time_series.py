@@ -33,7 +33,7 @@ STYLE_FACTOR_MAP = {'lncap': 'Size',
                     'resid_vol': 'ResidualVol',
                     'liquidity': 'Liquidity',
                     'book_to_price': 'Value',
-                    'growth': 'Growth',
+                    # 'growth': 'Growth',
                     'leverage': 'Leverage',
                     'div_yield': 'DividendYield',
                     'earnings_yield': 'EarningsYield',
@@ -513,8 +513,7 @@ class StyleFactorsExposureTS(DataNode):
         fund_all = fundamentals_hist_df.unstack("unique_identifier")
         # Shift the statement dates +90 d to avoid look-ahead, then ffill
         fund_all.index = fund_all.index + datetime.timedelta(days=90)
-        fund_all = fund_all.reindex(prices.index).ffill()
-
+        fund_all = fund_all.reindex(prices.index, method='ffill')
 
         # Keep only assets present in both tables
         common_assets = prices.columns.intersection(
@@ -579,9 +578,9 @@ class StyleFactorsExposureTS(DataNode):
 
         # ⚙️ Growth – 3-year sales growth (FY0 vs FY-3), held constant within FY
         rev = fund_all["revenue"]
-        rev_fy = rev.groupby(pd.Grouper(freq="Y")).last()  # annual series
+        rev_fy = rev.groupby(pd.Grouper(freq="YE")).last()  # annual series
         growth_fy = rev_fy / rev_fy.shift(3) - 1
-        growth = growth_fy.reindex(prices.index, method="ffill")
+        growth = growth_fy.reindex(prices.index, method="ffill") #growth removed because we dont have enouigh data
 
         # ⚙️ Beta – 104-week weekly CAPM β (Barra “Beta”); forward-filled to daily
         wk_ret = prices.resample("W-FRI").last().pct_change()
@@ -608,7 +607,8 @@ class StyleFactorsExposureTS(DataNode):
             "beta": beta, "nl_beta": nl_beta,
             "mom_12_1": mom_12_1, "mom_1m": mom_1m,
             "resid_vol": resid_vol, "liquidity": liquidity,
-            "book_to_price": book_to_price, "growth": growth,
+            "book_to_price": book_to_price,
+            # "growth": growth,
             "leverage": leverage,
             "div_yield": div_yield, "earnings_yield": earnings_yield,
             "profitability": profitability, "market_cap": mkt_cap
@@ -712,7 +712,7 @@ class StyleFactorsExposureTS(DataNode):
             'div_yield': "TTM dividends per share ÷ price; DividendYield.",
             'leverage': "Total debt ÷ total assets; Leverage factor.",
             'profitability': "Net income ÷ total assets; Profitability factor.",
-            'growth': "3-year revenue growth (FY0 vs FY-3), forward-filled; Growth factor.",
+            # 'growth': "3-year revenue growth (FY0 vs FY-3), forward-filled; Growth factor.",
         }
 
         return [
@@ -767,6 +767,9 @@ class FactorReturnsDataNodes(DataNode):
                                                market_beta_asset_proxy=market_beta_asset_proxy,
                                                *args, **kwargs)
 
+
+    def dependencies(self) -> Dict[str, Union["DataNode", "APIDataNode"]]:
+        return {"style_factor_exposure_ts":self.style_factor_exposure_ts}
     def update(self):
         """
         Compute daily factor-return vectors fₜ by robust WLS on the exposure
@@ -911,7 +914,7 @@ class FactorReturnsDataNodes(DataNode):
             'resid_vol': "Return to the Residual Volatility factor.",
             'liquidity': "Return to the Liquidity factor.",
             'book_to_price': "Return to the Value factor (book‑to‑price).",
-            'growth': "Return to the Growth factor (3‑year sales growth).",
+            # 'growth': "Return to the Growth factor (3‑year sales growth).",
             'leverage': "Return to the Leverage factor (debt‑to‑assets).",
             'div_yield': "Return to the Dividend‑Yield factor.",
             'earnings_yield': "Return to the Earnings‑Yield factor.",

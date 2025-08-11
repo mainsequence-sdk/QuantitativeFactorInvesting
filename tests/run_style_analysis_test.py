@@ -16,7 +16,7 @@ if __name__ == "__main__":
     style_ts = StyleFactorsExposureTS(assets_category_unique_id='s&p500_constitutents',
                                       market_beta_asset_proxy=market_asset,
                                       )
-    style_ts.run(debug_mode=True,force_update=True)
+    # style_ts.run(debug_mode=True,force_update=True)
 
     factor_returns_ts = FactorReturnsDataNodes(assets_category_unique_id='s&p500_constitutents',
                                                 market_beta_asset_proxy=market_asset,

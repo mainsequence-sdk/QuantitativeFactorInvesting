@@ -17,7 +17,10 @@ from polygon import RESTClient
 from tqdm import tqdm
 import polygon
 
-client = RESTClient(api_key=os.getenv("POLYGON_API_KEY"))
+if os.getenv("POLYGON_API_KEY"):
+    client = RESTClient(api_key=os.getenv("POLYGON_API_KEY"))
+else:
+    client = None
 
 CANONICAL_FACTOR_RETURNS_ID = "canonical_12_style_factor_returns_axioma_barra"
 CANONICAL_STYLE_FACTORS_MATRIX_ID = "canonical_12_style_factor_matrix_axba"

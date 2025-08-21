@@ -262,34 +262,32 @@ class FactorExposureApp(HtmlApp):
             )
 
         # 5) Scenario-shock analyses --------------------------------------------
-        for i, shock_conf in enumerate(self.configuration.shocks_configuration, start=4):
-            shock = pd.Series(1.0, index=contrib.columns)
-            shock.loc[shock_conf.factor_name] += shock_conf.factor_shock_multiplier
-            impact = pfa.scenario_analysis(shock, last_date).reset_index(name="PnlImpact")
-            fig = px.bar(impact, x="index", y="PnlImpact",
-                         title=f"Hypothetical Shock of 1%: {shock_conf.factor_name}",
-                         )
-            # 1) Axis: no scaling, just two decimals + % suffix
-            fig.update_yaxes(tickformat=".2f", ticksuffix="%")
+        if self.configuration.shocks_configuration:
+            for i, shock_conf in enumerate(self.configuration.shocks_configuration, start=4):
+                shock = pd.Series(1.0, index=contrib.columns)
+                shock.loc[shock_conf.factor_name] += shock_conf.factor_shock_multiplier
+                impact = pfa.scenario_analysis(shock, last_date).reset_index(name="PnlImpact")
+                fig = px.bar(impact, x="index", y="PnlImpact",
+                             title=f"Hypothetical Shock of 1%: {shock_conf.factor_name}",
+                             )
+                # 1) Axis: no scaling, just two decimals + % suffix
+                fig.update_yaxes(tickformat=".2f", ticksuffix="%")
 
-            # 2) Bar labels: show the raw y value with a % sign
-            fig.update_traces(
-                texttemplate="%{y:.2f}%",
-                textposition="outside"
-            )
-            html = fig.to_html(full_html=False, include_plotlyjs="cdn",
-                               config={"responsive": True, "displayModeBar": False})
-            art_id = self._chart_to_artifact(html, f"shock_{shock_conf.factor_name}")
-            slide = self._get_slide(presentation, i)
-            self._patch_slide(
-                slide,
-                title=f"Shock: {shock_conf.factor_name}",
-                artifact_id=art_id,
-                note=f"Impact calculated at {last_date}",
-            )
-
-
-
+                # 2) Bar labels: show the raw y value with a % sign
+                fig.update_traces(
+                    texttemplate="%{y:.2f}%",
+                    textposition="outside"
+                )
+                html = fig.to_html(full_html=False, include_plotlyjs="cdn",
+                                   config={"responsive": True, "displayModeBar": False})
+                art_id = self._chart_to_artifact(html, f"shock_{shock_conf.factor_name}")
+                slide = self._get_slide(presentation, i)
+                self._patch_slide(
+                    slide,
+                    title=f"Shock: {shock_conf.factor_name}",
+                    artifact_id=art_id,
+                    note=f"Impact calculated at {last_date}",
+                )
 
         return None
 

@@ -148,7 +148,7 @@ class FundamentalsDataNode(DataNode):
     def update(self):
         # Fundamentals are annual, so we don't need to update daily.
         # We'll update if there's no data or if the last update was > 90 days ago.
-        return pd.DataFrame()
+
         def common_calendar_year(end_ts: pd.Timestamp) -> int:
             """
             Map *any* fiscal year that ends in Jan–Mar back to the previous

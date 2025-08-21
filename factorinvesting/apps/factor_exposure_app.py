@@ -24,40 +24,40 @@ class ShockAnalysisConfiguration(BaseModel):
 
 class FactorAnalysisConfiguration(BaseModel):
     """Pydantic model defining the parameters for report generation."""
-    portfolio_ticker: str #= Field(
-    #     title="Portfolio Ticker",
-    #     description="Ticker of the target_portfolio reference ms_client.Portfolio",
-    #     example="portfo446B",
-    # ),
-    folder_name: str #= Field(default="Factor Analysis Reports",
-                             # title="Folder Name",
-                             # description="Name of the folder where the report will be saved",
-                             # example="Temp Folder",
-                             # )
+    portfolio_id: int = Field(
+        title="Portfolio ID",
+        description="ID of the target_portfolio reference ms_client.Portfolio",
+        example=33,
+    )
+    folder_name: str = Field(default="Factor Analysis Reports",
+                             title="Folder Name",
+                             description="Name of the folder where the report will be saved",
+                             example="Temp Folder",
+                             )
 
     calculate_historical_exposures: bool = True
     calculate_factor_attribution: bool = True
     calculate_tail_exposure: bool = True
     calculate_exposure_correlation_matrix: bool = True
     shocks_configuration: Optional[List[ShockAnalysisConfiguration]] = None
-    start_date: str #= Field(
-    #     ...,
-    #     title="Start Date",
-    #     description="Inclusive start datetime for the analysis (must include timezone)",
-    #     example="2025-07-01T00:00:00+02:00",
-    # )
-    end_date: str #= Field(
-    #     ...,
-    #     title="End Date",
-    #     description="Inclusive end datetime for the analysis (must include timezone)",
-    #     example="2025-07-31T23:59:59+02:00",
-    # )
+    start_date: str = Field(
+        ...,
+        title="Start Date",
+        description="Inclusive start datetime for the analysis (must include timezone)",
+        example="2025-07-01T00:00:00+02:00",
+    )
+    end_date: str = Field(
+        ...,
+        title="End Date",
+        description="Inclusive end datetime for the analysis (must include timezone)",
+        example="2025-07-31T23:59:59+02:00",
+    )
 
-    presentation_theme: Optional[str] #= Field(default="Main Sequence",
-                                    # title="Presentation Theme",
-                                    # description="Theme to use in the presentation",
-                                    # example="Main Sequence",
-                                    # )
+    presentation_theme: Optional[str] = Field(default="Main Sequence",
+                                    title="Presentation Theme",
+                                    description="Theme to use in the presentation",
+                                    example="Main Sequence",
+                                    )
 
 
 @register_app()
@@ -70,13 +70,13 @@ class FactorExposureApp(HtmlApp):
     """
     configuration_class = FactorAnalysisConfiguration
 
-    def __init__(self, configuration: FactorAnalysisConfiguration):
-        self.configuration = configuration
+    def __init__(self, *args, **kwargs):
+        super().__init__( *args, **kwargs)
 
         # create folder if not exist
         self.folder = ms_client.Folder.get_or_create(name=self.configuration.folder_name)
         self.configuration_hash = self.hash_pydantic_object(self.configuration)
-        super().__init__()
+
     def _chart_to_artifact(self, chart_html: str, suffix: str) -> str:
         """
         Write a Plotly-HTML chart to a temp file, upload it to Artifact storage,
@@ -127,13 +127,12 @@ class FactorExposureApp(HtmlApp):
 
     def run(self):
 
-        portfolio = ms_client.Portfolio.get(portfolio_ticker=self.configuration.portfolio_ticker)
+        portfolio = ms_client.Portfolio.get(id=self.configuration.portfolio_id)
 
         latest_weights = portfolio.get_latest_weights()
 
         latest_weights = pd.Series(latest_weights)
         market_asset = ms_client.Asset.get(ticker="IVV",
-                                           execution_venue__symbol=ms_client.MARKETS_CONSTANTS.MAIN_SEQUENCE_EV,
                                            security_type=ms_client.MARKETS_CONSTANTS.FIGI_SECURITY_TYPE_ETP,
                                            security_market_sector=ms_client.MARKETS_CONSTANTS.FIGI_MARKET_SECTOR_EQUITY,
                                            )
@@ -151,9 +150,9 @@ class FactorExposureApp(HtmlApp):
         #### report data
 
         presentation = ms_client.Presentation.get_or_create_by_title(
-            title=f"{self.configuration.portfolio_ticker} Factor Analysis: {self.configuration.start_date} - {self.configuration.end_date}",
+            title=f"{portfolio.portfolio_name} Factor Analysis: {self.configuration.start_date} - {self.configuration.end_date}",
             folder=self.folder.id,
-            description=f"Automatically generated presentation for for {self.configuration.portfolio_ticker}",
+            description=f"Automatically generated presentation for portfolio {portfolio.portfolio_name}",
             )
         theme=ms_client.Theme.get(name=self.configuration.presentation_theme)
         presentation.patch(theme_id=theme.id)
@@ -293,3 +292,13 @@ class FactorExposureApp(HtmlApp):
 
 
         return None
+
+
+
+if __name__ == "__main__":
+    configuration = FactorAnalysisConfiguration(
+        portfolio_id=26,
+        start_date="2022-07-01T00:00:00+02:00",
+        end_date="2025-07-01T00:00:00+02:00",
+    )
+    FactorExposureApp(configuration=configuration).run()

@@ -15,7 +15,7 @@ from mainsequence.virtualfundbuilder.resource_factory.app_factory import (
     register_app,
 )
 from mainsequence.virtualfundbuilder.utils import get_vfb_logger
-
+import pytz
 logger = get_vfb_logger()
 
 
@@ -39,8 +39,8 @@ class DerivativesPricerConfiguration(BaseModel):
     strike_price: float = Field(
         default=460.0, description="The strike price of the option.", gt=0
     )
-    maturity_date: datetime.date = Field(
-        default=datetime.date(2025, 12, 19),
+    maturity_date: str = Field(
+        default="2025-12-30T00:00:00+02:00",
         description="The expiration date of the option.",
     )
     risk_free_rate: float = Field(
@@ -56,8 +56,9 @@ class DerivativesPricerConfiguration(BaseModel):
 
 
 def generate_plausible_greeks(config: DerivativesPricerConfiguration):
+    maturity_as_date = datetime.datetime.fromisoformat(config.maturity_date).date()
     time_to_maturity_years = (
-        config.maturity_date - datetime.date.today()
+        maturity_as_date - datetime.date.today()
     ).days / 365.25
 
     if time_to_maturity_years <= 0:
@@ -133,8 +134,9 @@ class DerivativesPricerApp(HtmlApp):
 
         # --- 1. Generate Data ---
         base_results = generate_plausible_greeks(self.configuration)
+        maturity_as_date = datetime.datetime.fromisoformat(self.configuration.maturity_date).date()
         time_to_maturity_days = (
-                self.configuration.maturity_date - datetime.date.today()
+            maturity_as_date - datetime.date.today()
         ).days
 
         # --- 2. Generate HTML Components ---
@@ -143,7 +145,7 @@ class DerivativesPricerApp(HtmlApp):
             ["Underlying Asset", self.configuration.underlying_asset],
             ["Spot Price", f"${self.configuration.spot_price:.2f}"],
             ["Strike Price", f"${self.configuration.strike_price:.2f}"],
-            ["Maturity Date", self.configuration.maturity_date.strftime("%Y-%m-%d")],
+            ["Maturity Date", maturity_as_date.strftime("%Y-%m-%d")],
             ["Days to Maturity", f"{time_to_maturity_days}"],
             ["Volatility (Implied)", f"{self.configuration.volatility:.2%}"],
         ]
@@ -224,7 +226,6 @@ if __name__ == "__main__":
         underlying_asset="AAPL",
         spot_price=190.50,
         strike_price=195.00,
-        maturity_date=datetime.date.today() + datetime.timedelta(days=180),
     )
     app = DerivativesPricerApp(config)
 
